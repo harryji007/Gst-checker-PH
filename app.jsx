@@ -1,52 +1,49 @@
-import { useState, useRef, useCallback } from "react";
+// Importing required libraries
 import axios from 'axios';
-import './GSTChecker.css'; // Your custom styles
+import { parse } from 'json2csv';
 
-const GSTChecker = () => {
-    const [gstNumber, setGstNumber] = useState('');
-    const [status, setStatus] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const inputRef = useRef(null);
+// Function to validate GSTIN format
+function isValidGSTIN(gstin) {
+    const gstinRegex = /^[0-9]{2}[A-Z]{4}[0-9]{4}[A-Z][0-9A-Z][Z][0-9A-Z]{1}$/;
+    return gstinRegex.test(gstin);
+}
 
-    const checkGSTStatus = useCallback(async () => {
-        if (!gstNumber) return;
-        setLoading(true);
-        try {
-            const response = await axios.get(`https://api.claudedemo.com/gst/${gstNumber}`);
-            setStatus(response.data);
-        } catch (error) {
-            console.error('Error fetching data:', error);
-            setStatus({error: 'Error fetching data. Please try again.'});
-        } finally {
-            setLoading(false);
+// Function to check active status via Claude API
+async function checkActiveStatus(gstin) {
+    const response = await axios.get(`https://api.claude.ai/gst-status/${gstin}`);
+    return response.data.activeStatus;
+}
+
+// Function to process GSTINs in bulk
+async function processGSTINs(gstins) {
+    const results = [];
+
+    for (const gstin of gstins) {
+        if (!isValidGSTIN(gstin)) {
+            results.push({ gstin, status: 'Invalid GSTIN Format' });
+            continue;
         }
-    }, [gstNumber]);
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        checkGSTStatus();
-    };
+        const status = await checkActiveStatus(gstin);
+        results.push({ gstin, status });
+    }
 
-    return (
-        <div className="gst-checker">
-            <h1>GST Checker</h1>
-            <form onSubmit={handleSubmit}>
-                <input
-                    type="text"
-                    placeholder="Enter GST Number"
-                    value={gstNumber}
-                    onChange={(e) => setGstNumber(e.target.value)}
-                    ref={inputRef}
-                />
-                <button type="submit" disabled={loading}>Check Status</button>
-            </form>
-            {loading && <p>Loading...</p>}
-            {status && <div className="result">
-                <h2>Result:</h2>
-                {status.error ? <p className="error">{status.error}</p> : <p>GST Status: {status.gst_status}</p>}
-            </div>}
-        </div>
-    );
-};
+    return results;
+}
 
-export default GSTChecker;
+// Function to export results to CSV
+function exportToCSV(results) {
+    const csv = parse(results);
+    require('fs').writeFileSync('gst_status_results.csv', csv);
+}
+
+// Main function to run the checker
+async function main() {
+    const gstins = ['22ABCDE1234F1Z5', '23ABCDE1234F2Z6'];  // Sample GSTIN Array
+    const results = await processGSTINs(gstins);
+
+    console.log('Processing complete', results);
+    exportToCSV(results);
+}
+
+main();
